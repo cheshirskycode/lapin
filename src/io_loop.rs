@@ -237,6 +237,9 @@ impl IoLoop {
         }
         self.poll_socket_events();
         self.attempt_flush(writable_context)?;
+
+        self.metrics.loop_duration.observe(now.elapsed().as_secs_f64());
+
         self.write(writable_context)?;
         self.check_connection_state();
         if self.should_continue() {
@@ -251,7 +254,7 @@ impl IoLoop {
             status=?self.status,
             "io_loop do_run done",
         );
-        self.metrics.loop_duration.observe(now.elapsed().as_secs_f64());
+
         Ok(())
     }
 
