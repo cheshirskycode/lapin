@@ -212,7 +212,6 @@ impl IoLoop {
         readable_context: &mut Context<'_>,
         writable_context: &mut Context<'_>,
     ) -> Result<()> {
-        let now = std::time::Instant::now();
 
         self.metrics.frames_publish.set(self.frames.publish_frames_len() as i64);
         self.metrics.frames_retry.set(self.frames.retry_frames_len() as i64);
@@ -233,11 +232,11 @@ impl IoLoop {
             "io_loop do_run",
         );
 
-        self.metrics.loop_duration.observe(now.elapsed().as_secs_f64());
-
+        let now = std::time::Instant::now();
         if !self.can_read() && !self.can_write() && self.should_continue() {
             self.socket_state.wait();
         }
+        self.metrics.loop_duration.observe(now.elapsed().as_secs_f64());
         self.poll_socket_events();
         self.attempt_flush(writable_context)?;
 
