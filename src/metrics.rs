@@ -43,6 +43,7 @@ impl Metrics {
                 "Time taken to push frames",
             )
             .const_labels(labels.clone())
+            .buckets(vec![0.000005, 0.00001, 0.00025, 0.0005, 0.001, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0,])
         ).unwrap();
         let loop_duration = Histogram::with_opts(
             HistogramOpts::new(
@@ -50,6 +51,7 @@ impl Metrics {
                 "Time taken to run the main loop",
             )
                 .const_labels(labels.clone())
+                .buckets(vec![0.000005, 0.00001, 0.00025, 0.0005, 0.001, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0,])
         ).unwrap();
         let loop_write_duration = Histogram::with_opts(
             HistogramOpts::new(
@@ -57,6 +59,7 @@ impl Metrics {
                 "Time taken to write to the socket",
             )
                 .const_labels(labels.clone())
+                .buckets(vec![0.000005, 0.00001, 0.00025, 0.0005, 0.001, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0,])
         ).unwrap();
         let bytes_written = IntCounter::with_opts(
             Opts::new(
@@ -71,6 +74,7 @@ impl Metrics {
                 "Time taken to read from the socket",
             )
                 .const_labels(labels.clone())
+                .buckets(vec![0.000005, 0.00001, 0.00025, 0.0005, 0.001, 0.025, 0.05, 0.1, 0.2, 0.5, 1.0,])
         ).unwrap();
         let bytes_read = IntCounter::with_opts(
             Opts::new(
