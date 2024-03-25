@@ -9,6 +9,7 @@ pub struct ConnectionProperties {
     pub client_properties: FieldTable,
     pub executor: Option<Arc<dyn FullExecutor + Send + Sync>>,
     pub reactor: Option<Arc<dyn Reactor + Send + Sync>>,
+    pub metrics: Option<crate::metrics::Metrics>,
 }
 
 impl Default for ConnectionProperties {
@@ -18,6 +19,7 @@ impl Default for ConnectionProperties {
             client_properties: FieldTable::default(),
             executor: None,
             reactor: None,
+            metrics: None,
         }
     }
 }
@@ -41,6 +43,12 @@ impl ConnectionProperties {
     #[must_use]
     pub fn with_reactor<R: Reactor + Send + Sync + 'static>(mut self, reactor: R) -> Self {
         self.reactor = Some(Arc::new(reactor));
+        self
+    }
+
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: crate::metrics::Metrics) -> Self {
+        self.metrics = Some(metrics);
         self
     }
 }

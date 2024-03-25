@@ -23,12 +23,20 @@ impl fmt::Debug for ExpectedReply {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub(crate) struct Frames {
     inner: Arc<Mutex<Inner>>,
+    metrics: crate::metrics::Metrics,
 }
 
 impl Frames {
+    pub(crate) fn new(metrics: crate::metrics::Metrics) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(Inner::default())),
+            metrics,
+        }
+    }
+
     pub(crate) fn push(
         &self,
         channel_id: ChannelId,
@@ -42,7 +50,10 @@ impl Frames {
     }
 
     pub(crate) fn push_frames(&self, frames: Vec<AMQPFrame>) -> Promise<()> {
-        self.inner.lock().push_frames(frames)
+        let now = std::time::Instant::now();
+        let promise  = self.inner.lock().push_frames(frames);
+        self.metrics.frames_push_frames.observe(now.elapsed().as_secs_f64());
+        promise
     }
 
     pub(crate) fn retry(&self, frame: (AMQPFrame, Option<PromiseResolver<()>>)) {
@@ -91,6 +102,26 @@ impl Frames {
 
     pub(crate) fn clear_expected_replies(&self, channel_id: ChannelId, error: Error) {
         self.inner.lock().clear_expected_replies(channel_id, error);
+    }
+
+    pub(crate) fn publish_frames_len(&self) -> usize {
+        self.inner.lock().publish_frames.len()
+    }
+
+    pub(crate) fn retry_frames_len(&self) -> usize {
+        self.inner.lock().retry_frames.len()
+    }
+
+    pub(crate) fn frames_len(&self) -> usize {
+        self.inner.lock().frames.len()
+    }
+
+    pub(crate) fn low_prio_frames_len(&self) -> usize {
+        self.inner.lock().low_prio_frames.len()
+    }
+
+    pub(crate) fn expected_replies_len(&self) -> usize {
+        self.inner.lock().expected_replies.len()
     }
 }
 

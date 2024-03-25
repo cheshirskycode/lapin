@@ -120,6 +120,7 @@ pub use queue::Queue;
 pub mod acker;
 pub mod heartbeat;
 pub mod message;
+pub mod metrics;
 pub mod publisher_confirm;
 pub mod socket_state;
 pub mod topology;

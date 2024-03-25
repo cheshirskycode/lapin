@@ -292,6 +292,7 @@ impl Connection {
         connect: Box<dyn FnOnce(&AMQPUri) -> HandshakeResult + Send + Sync>,
         mut options: ConnectionProperties,
     ) -> Result<Connection> {
+        let metrics = options.metrics.take().unwrap_or_default();
         let executor = options
             .executor
             .take()
@@ -334,7 +335,7 @@ impl Connection {
         let socket_state = SocketState::default();
         let waker = socket_state.handle();
         let internal_rpc = InternalRPC::new(executor.clone(), waker.clone());
-        let frames = Frames::default();
+        let frames = Frames::new(metrics.clone());
         let conn = Connection::new(
             waker,
             internal_rpc.handle(),
@@ -403,6 +404,7 @@ impl Connection {
             io_loop_handle,
             stream,
             heartbeat,
+            metrics,
         )
         .await
         .and_then(IoLoop::start)?;

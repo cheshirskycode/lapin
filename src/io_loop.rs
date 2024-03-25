@@ -48,6 +48,7 @@ pub struct IoLoop {
     receive_buffer: Buffer,
     send_buffer: Buffer,
     serialized_frames: VecDeque<(FrameSize, Option<PromiseResolver<()>>)>,
+    metrics: crate::metrics::Metrics,
 }
 
 impl IoLoop {
@@ -61,6 +62,7 @@ impl IoLoop {
         connection_io_loop_handle: ThreadHandle,
         stream: Pin<Box<dyn AsyncIOHandle + Send>>,
         heartbeat: Heartbeat,
+        metrics: crate::metrics::Metrics,
     ) -> Result<Self> {
         let frame_size = std::cmp::max(
             protocol::constants::FRAME_MIN_SIZE,
@@ -82,6 +84,7 @@ impl IoLoop {
             receive_buffer: Buffer::with_capacity(FRAMES_STORAGE * frame_size as usize),
             send_buffer: Buffer::with_capacity(FRAMES_STORAGE * frame_size as usize),
             serialized_frames: VecDeque::default(),
+            metrics,
         })
     }
 
@@ -155,6 +158,25 @@ impl IoLoop {
             ThreadBuilder::new()
                 .name("lapin-io-loop".to_owned())
                 .spawn(move || {
+                    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    let stop2 = stop.clone();
+                    let metrics = self.metrics.clone();
+                    std::thread::spawn(move || {
+                        let mut read = metrics.bytes_read.get();
+                        let mut write = metrics.bytes_written.get();
+
+                        while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                            let current_read = metrics.bytes_read.get();
+                            let current_write = metrics.bytes_written.get();
+
+                            metrics.read_speed.set((current_read - read) as i64);
+                            metrics.write_speed.set((current_write - write) as i64);
+                            read = current_read;
+                            write = current_write;
+                            std::thread::sleep(Duration::from_secs(1));
+                        }
+                    });
+
                     let readable_waker = self.readable_waker();
                     let mut readable_context = Context::from_waker(&readable_waker);
                     let writable_waker = self.writable_waker();
@@ -165,6 +187,7 @@ impl IoLoop {
                             res = self.critical_error(err);
                         }
                     }
+                    stop.store(true, std::sync::atomic::Ordering::Relaxed);
                     self.internal_rpc.stop();
                     self.heartbeat.cancel();
                     res
@@ -189,6 +212,14 @@ impl IoLoop {
         readable_context: &mut Context<'_>,
         writable_context: &mut Context<'_>,
     ) -> Result<()> {
+        let now = std::time::Instant::now();
+
+        self.metrics.frames_publish.set(self.frames.publish_frames_len() as i64);
+        self.metrics.frames_retry.set(self.frames.retry_frames_len() as i64);
+        self.metrics.frames_frames.set(self.frames.frames_len() as i64);
+        self.metrics.frames_low_prio.set(self.frames.low_prio_frames_len() as i64);
+        self.metrics.frames_expected_replies.set(self.frames.expected_replies_len() as i64);
+
         trace!("io_loop run");
         self.poll_socket_events();
         if !self.ensure_setup()? {
@@ -220,6 +251,7 @@ impl IoLoop {
             status=?self.status,
             "io_loop do_run done",
         );
+        self.metrics.loop_duration.observe(now.elapsed().as_secs_f64());
         Ok(())
     }
 
@@ -257,18 +289,22 @@ impl IoLoop {
     }
 
     fn write(&mut self, writable_context: &mut Context<'_>) -> Result<()> {
+        let now = std::time::Instant::now();
         while self.can_write() {
             let res = self.write_to_stream(writable_context);
             self.handle_io_result(res)?;
         }
+        self.metrics.loop_write_duration.observe(now.elapsed().as_secs_f64());
         Ok(())
     }
 
     fn read(&mut self, readable_context: &mut Context<'_>) -> Result<()> {
+        let now = std::time::Instant::now();
         while self.can_read() {
             let res = self.read_from_stream(readable_context);
             self.handle_io_result(res)?;
         }
+        self.metrics.loop_read_duration.observe(now.elapsed().as_secs_f64());
         Ok(())
     }
 
@@ -281,6 +317,8 @@ impl IoLoop {
             .poll_write_to(writable_context, Pin::new(&mut self.stream))?;
 
         if let Some(sz) = self.socket_state.handle_write_poll(res) {
+            self.metrics.bytes_written.inc_by(sz as u64);
+
             if sz > 0 {
                 self.heartbeat.update_last_write();
 
@@ -334,6 +372,7 @@ impl IoLoop {
                     .poll_read_from(readable_context, Pin::new(&mut self.stream))?;
 
                 if let Some(sz) = self.socket_state.handle_read_poll(res) {
+                    self.metrics.bytes_read.inc_by(sz as u64);
                     if sz > 0 {
                         trace!("read {} bytes", sz);
                         self.receive_buffer.fill(sz);

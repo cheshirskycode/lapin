@@ -61,6 +61,7 @@ futures-core = "^0.3"
 futures-io = "^0.3"
 parking_lot = "^0.12"
 pinky-swear = "^6.1"
+prometheus = { version = "0.13", default-features = false }
 reactor-trait = "^1.1"
 waker-fn = "^1.1"
 
