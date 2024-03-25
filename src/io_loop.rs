@@ -232,13 +232,16 @@ impl IoLoop {
             has_data=%self.has_data(),
             "io_loop do_run",
         );
+
+        self.metrics.loop_duration.observe(now.elapsed().as_secs_f64());
+
         if !self.can_read() && !self.can_write() && self.should_continue() {
             self.socket_state.wait();
         }
         self.poll_socket_events();
         self.attempt_flush(writable_context)?;
 
-        self.metrics.loop_duration.observe(now.elapsed().as_secs_f64());
+
 
         self.write(writable_context)?;
         self.check_connection_state();
