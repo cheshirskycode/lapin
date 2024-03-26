@@ -24,7 +24,7 @@ use std::{
 };
 use tracing::{error, trace};
 
-const FRAMES_STORAGE: usize = 2;
+const FRAMES_STORAGE: usize = 32;
 
 #[derive(Debug, PartialEq)]
 enum Status {
