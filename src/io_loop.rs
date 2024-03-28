@@ -244,6 +244,7 @@ impl IoLoop {
 
         self.write(writable_context)?;
         self.check_connection_state();
+        self.poll_socket_events();
         if self.should_continue() {
             self.read(readable_context)?;
         }
