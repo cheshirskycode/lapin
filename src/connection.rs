@@ -1,11 +1,12 @@
 use crate::{
     AsyncTcpStream, ConnectionProperties, ConnectionStatus, Error, Event, Promise, Result,
-    channel::Channel,
+    channel::{Channel, Reply},
     channels::Channels,
     configuration::Configuration,
     connection_closer::ConnectionCloser,
+    connection_step::ConnectionStep,
     events::Events,
-    frames::Frames,
+    frames::{ExpectedReply, Frames},
     heartbeat::Heartbeat,
     internal_rpc::{InternalRPC, InternalRPCHandle},
     io_loop::IoLoop,
@@ -252,13 +253,16 @@ impl Connection {
         let (promise, resolver) = Promise::new("ProtocolHeader");
 
         trace!("Set connection as connecting");
-        self.status.clone().set_connecting(resolver.clone(), self)?;
+        self.status.clone().set_connecting()?;
 
         trace!("Sending protocol header to server");
         channel0.send_frame(
             AMQPFrame::ProtocolHeader(ProtocolVersion::amqp_0_9_1()),
-            Box::new(resolver),
-            None, // FIXME: switch to ExpectedReply instead of connection status?
+            Box::new(resolver.clone()),
+            Some(ExpectedReply(
+                Reply::ConnectionStep(ConnectionStep::ProtocolHeader(resolver.clone(), self)),
+                Box::new(resolver),
+            )),
             None,
         );
 

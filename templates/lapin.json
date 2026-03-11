@@ -3,6 +3,11 @@
     "metadata": {
       "channel0_only": true
     },
+    "start": {
+      "metadata": {
+        "connection_step": true
+      }
+    },
     "start-ok": {
       "metadata": {
         "extra_args": [
@@ -19,9 +24,12 @@
             "type": "Arc<dyn AuthProvider>"
           }
         ],
-        "send_hook": {
-          "params": ["conn_resolver", "connection", "auth_provider"]
-        }
+	"connection_step": "StartOk(conn_resolver, connection, auth_provider)"
+      }
+    },
+    "secure": {
+      "metadata": {
+        "connection_step": true
       }
     },
     "secure-ok": {
@@ -40,9 +48,12 @@
             "type": "Arc<dyn AuthProvider>"
           }
         ],
-        "send_hook": {
-          "params": ["conn_resolver", "connection", "auth_provider"]
-        }
+	"connection_step": "SecureOk(conn_resolver, connection, auth_provider)"
+      }
+    },
+    "tune": {
+      "metadata": {
+        "connection_step": true
       }
     },
     "open": {
@@ -52,6 +63,10 @@
           {
             "name": "connection",
             "type": "Box<Connection>"
+          },
+          {
+            "name": "conn_resolver",
+            "type": "PromiseResolver<Connection>"
           }
         ],
         "extra_args": [
@@ -63,10 +78,7 @@
             "name": "conn_resolver",
             "type": "PromiseResolver<Connection>"
           }
-        ],
-        "send_hook": {
-          "params": ["conn_resolver"]
-        }
+        ]
       }
     },
     "close": {

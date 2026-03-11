@@ -582,35 +582,6 @@ impl Channel {
         Err(ErrorKind::ProtocolError(err).into())
     }
 
-    fn before_connection_start_ok(
-        &self,
-        resolver: PromiseResolver<Connection>,
-        connection: Connection,
-        auth_provider: Arc<dyn AuthProvider>,
-    ) {
-        self.connection_status
-            .set_connection_step(ConnectionStep::StartOk(resolver, connection, auth_provider));
-    }
-
-    fn before_connection_secure_ok(
-        &self,
-        resolver: PromiseResolver<Connection>,
-        connection: Connection,
-        auth_provider: Arc<dyn AuthProvider>,
-    ) {
-        self.connection_status
-            .set_connection_step(ConnectionStep::SecureOk(
-                resolver,
-                connection,
-                auth_provider,
-            ));
-    }
-
-    fn before_connection_open(&self, resolver: PromiseResolver<Connection>) {
-        self.connection_status
-            .set_connection_step(ConnectionStep::Open(resolver));
-    }
-
     fn on_connection_close_ok_sent(&self, error: Error) {
         self.internal_rpc.finish_connection_shutdown();
         if !self.recovery_config.can_recover(&error) {
@@ -707,31 +678,35 @@ impl Channel {
         &self,
         state: ConnectionState,
         step: Option<ConnectionStep>,
+        resolver: Option<PromiseResolver<Connection>>,
     ) -> Result<()> {
         error!(
             ?state,
             step = step.as_ref().map(ConnectionStep::name),
-            "Invalid state"
+            "connection process error: invalid state"
         );
         let error: Error = ErrorKind::InvalidConnectionState(state).into();
         self.internal_rpc.set_connection_error(error.clone());
         if let Some((resolver, _)) = step.map(ConnectionStep::into_connection_resolver) {
             resolver.reject(error.clone());
         }
+        if let Some(resolver) = resolver {
+            resolver.reject(error.clone());
+        }
         Err(error)
     }
 
-    fn on_connection_start_received(&self, method: protocol::connection::Start) -> Result<()> {
+    fn on_connection_start_received(
+        &self,
+        method: protocol::connection::Start,
+        step: ConnectionStep,
+    ) -> Result<()> {
         trace!(?method, "Server sent connection::Start");
 
         let state = self.connection_status.state();
-        let step = self.connection_status.connection_step();
         if state != ConnectionState::Connecting {
-            return self.connection_process_error(state, step);
+            return self.connection_process_error(state, Some(step), None);
         }
-        let Some(step) = step else {
-            return self.connection_process_error(state, step);
-        };
 
         match step {
             ConnectionStep::ProtocolHeader(resolver, mut connection) => {
@@ -809,21 +784,21 @@ impl Channel {
                 });
                 Ok(())
             }
-            step => self.connection_process_error(state, Some(step)),
+            step => self.connection_process_error(state, Some(step), None),
         }
     }
 
-    fn on_connection_secure_received(&self, method: protocol::connection::Secure) -> Result<()> {
+    fn on_connection_secure_received(
+        &self,
+        method: protocol::connection::Secure,
+        step: ConnectionStep,
+    ) -> Result<()> {
         trace!(?method, "Server sent connection::Secure");
 
         let state = self.connection_status.state();
-        let step = self.connection_status.connection_step();
         if state != ConnectionState::Connecting {
-            return self.connection_process_error(state, step);
+            return self.connection_process_error(state, Some(step), None);
         }
-        let Some(step) = step else {
-            return self.connection_process_error(state, step);
-        };
 
         match step {
             ConnectionStep::StartOk(resolver, connection, auth_provider)
@@ -839,21 +814,21 @@ impl Channel {
                 });
                 Ok(())
             }
-            step => self.connection_process_error(state, Some(step)),
+            step => self.connection_process_error(state, Some(step), None),
         }
     }
 
-    fn on_connection_tune_received(&self, method: protocol::connection::Tune) -> Result<()> {
+    fn on_connection_tune_received(
+        &self,
+        method: protocol::connection::Tune,
+        step: ConnectionStep,
+    ) -> Result<()> {
         trace!(?method, "Server sent Connection::Tune");
 
         let state = self.connection_status.state();
-        let step = self.connection_status.connection_step();
         if state != ConnectionState::Connecting {
-            return self.connection_process_error(state, step);
+            return self.connection_process_error(state, Some(step), None);
         }
-        let Some(step) = step else {
-            return self.connection_process_error(state, step);
-        };
 
         match step {
             ConnectionStep::StartOk(resolver, connection, _)
@@ -881,7 +856,7 @@ impl Channel {
                 });
                 Ok(())
             }
-            step => self.connection_process_error(state, Some(step)),
+            step => self.connection_process_error(state, Some(step), None),
         }
     }
 
@@ -890,25 +865,17 @@ impl Channel {
         &self,
         _: protocol::connection::OpenOk,
         connection: Box<Connection>,
+        resolver: PromiseResolver<Connection>,
     ) -> Result<()> {
         let state = self.connection_status.state();
-        let step = self.connection_status.connection_step();
         if state != ConnectionState::Connecting {
-            return self.connection_process_error(state, step);
+            return self.connection_process_error(state, None, Some(resolver));
         }
-        let Some(step) = step else {
-            return self.connection_process_error(state, step);
-        };
 
-        match step {
-            ConnectionStep::Open(resolver) => {
-                self.connection_status.set_state(ConnectionState::Connected);
-                resolver.resolve(*connection);
-                self.events_sender.connected();
-                Ok(())
-            }
-            step => self.connection_process_error(state, Some(step)),
-        }
+        self.connection_status.set_state(ConnectionState::Connected);
+        resolver.resolve(*connection);
+        self.events_sender.connected();
+        Ok(())
     }
 
     fn on_connection_close_received(&self, method: protocol::connection::Close) -> Result<()> {
@@ -930,7 +897,7 @@ impl Channel {
         if self.recovery_config.can_recover(&error) {
             self.internal_rpc.init_connection_recovery(error.clone());
         } else {
-            let connection_resolver = self.connection_status.connection_resolver();
+            let connection_resolver = self.frames.connection_resolver(self.id);
             self.internal_rpc
                 .init_connection_shutdown(error.clone(), connection_resolver);
         }

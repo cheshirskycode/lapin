@@ -27,6 +27,7 @@ use options::*;
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum Reply {
+  ConnectionStep(ConnectionStep),
   {{#each protocol.classes as |class| ~}}
   {{#each class.methods as |method| ~}}
   {{#if method.c2s ~}}
@@ -133,10 +134,7 @@ impl Channel {
     self.send_method_frame_with_body("{{class.name}}.{{method.name}}", method, payload, properties, start_hook_res).await
     {{else}}
     {{#if method.metadata.resolver_hook ~}}{{method.metadata.resolver_hook}}{{/if ~}}
-    {{#if method.metadata.send_hook ~}}
-    self.before_{{snake class.name false}}_{{snake method.name false}}({{#if method.metadata.send_hook.params ~}}{{#each method.metadata.send_hook.params as |param| ~}}{{#unless @first ~}}, {{/unless ~}}{{param}}{{/each ~}}{{/if ~}});
-    {{/if ~}}
-    self.send_method_frame(method, Box::new(resolver.clone()), {{#if method.synchronous ~}}Some(ExpectedReply(reply, Box::new(resolver))), None{{else}}None, Some(resolver){{/if ~}});
+    self.send_method_frame(method, Box::new(resolver.clone()), {{#if method.synchronous ~}}Some(ExpectedReply(reply, Box::new(resolver))), None{{else if method.metadata.connection_step}}Some(ExpectedReply(Reply::ConnectionStep(ConnectionStep::{{method.metadata.connection_step}}), Box::new(resolver))), None{{else}}None, Some(resolver){{/if ~}});
     {{#if method.metadata.end_hook ~}}
     self.on_{{snake class.name false}}_{{snake method.name false}}_sent({{#if method.metadata.end_hook.params ~}}{{#each method.metadata.end_hook.params as |param| ~}}{{#unless @first ~}}, {{/unless ~}}{{param}}{{/each ~}}{{/if ~}});
     {{/if ~}}
@@ -190,6 +188,21 @@ impl Channel {
       unexpected => {
         self.handle_invalid_contents(format!("unexpected {{class.name}} {{method.name}} received on channel {}, was awaiting for {:?}", self.id, unexpected), method.get_amqp_class_id(), method.get_amqp_method_id())
       },
+    }
+  }
+  {{else if method.metadata.connection_step}}
+  fn receive_{{snake class.name false}}_{{snake method.name false}}(&self, method: protocol::{{snake class.name}}::{{camel method.name}}) -> Result<()> {
+    self.assert_channel0(
+      method.get_amqp_class_id(),
+      method.get_amqp_method_id(),
+    )?;
+    if !self.status.can_receive_messages() {
+      return Err(self.status.state_error("{{class.name}}.{{method.name}}"));
+    }
+
+    match self.frames.find_connection_step(self.id) {
+      Some(step) => self.on_{{snake class.name false}}_{{snake method.name false}}_received(method, step),
+      None => self.connection_process_error(self.connection_status.state(), None, None),
     }
   }
   {{else}}

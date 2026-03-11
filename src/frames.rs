@@ -1,6 +1,7 @@
 use crate::{
-    Error, PromiseResolver,
+    Connection, Error, PromiseResolver,
     channel::Reply,
+    connection_step::ConnectionStep,
     internal_rpc::InternalRPCHandle,
     promise::Cancelable,
     types::{ChannelId, FrameSize},
@@ -59,6 +60,34 @@ impl Frames {
 
     pub(crate) fn pop(&self, flow: bool) -> Option<FrameEntry> {
         self.lock_inner().pop(flow)
+    }
+
+    pub(crate) fn find_connection_step(&self, channel_id: ChannelId) -> Option<ConnectionStep> {
+        match self.find_expected_reply(channel_id, |reply| {
+            matches!(&reply.0, Reply::ConnectionStep(..))
+        }) {
+            Some(Reply::ConnectionStep(step)) => Some(step),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn connection_resolver(
+        &self,
+        channel_id: ChannelId,
+    ) -> Option<PromiseResolver<Connection>> {
+        let resolver = self
+            .find_connection_step(channel_id)
+            .map(ConnectionStep::into_connection_resolver);
+        // We carry the Connection here to drop the lock() above before dropping the Connection
+        resolver.map(|(resolver, _connection)| resolver)
+    }
+
+    pub(crate) fn clear_connection_steps(&self, error: Option<&Error>) {
+        while let Some(resolver) = self.connection_resolver(0) {
+            if let Some(err) = error {
+                resolver.reject(err.clone());
+            }
+        }
     }
 
     pub(crate) fn find_expected_reply<P: FnMut(&ExpectedReply) -> bool>(

@@ -1,7 +1,4 @@
-use crate::{
-    Connection, Error, ErrorKind, PromiseResolver, Result, connection_step::ConnectionStep,
-    types::ShortString, uri::AMQPUri,
-};
+use crate::{Error, ErrorKind, Result, types::ShortString, uri::AMQPUri};
 use std::{
     fmt,
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
@@ -27,30 +24,12 @@ impl ConnectionStatus {
         std::mem::replace(&mut inner.state, state)
     }
 
-    pub(crate) fn set_connecting(
-        &self,
-        resolver: PromiseResolver<Connection>,
-        conn: Connection,
-    ) -> Result<()> {
-        self.write().set_connecting(resolver, conn)
+    pub(crate) fn set_connecting(&self) -> Result<()> {
+        self.write().set_connecting()
     }
 
     pub(crate) fn set_reconnecting(&self) {
         self.write().set_reconnecting();
-    }
-
-    pub(crate) fn connection_step(&self) -> Option<ConnectionStep> {
-        self.write().connection_step.take()
-    }
-
-    pub(crate) fn set_connection_step(&self, connection_step: ConnectionStep) {
-        self.write().connection_step = Some(connection_step);
-    }
-
-    pub(crate) fn connection_resolver(&self) -> Option<PromiseResolver<Connection>> {
-        let resolver = self.write().connection_resolver();
-        // We carry the Connection here to drop the lock() above before dropping the Connection
-        resolver.map(|(resolver, _connection)| resolver)
     }
 
     pub fn vhost(&self) -> ShortString {
@@ -113,11 +92,7 @@ impl ConnectionStatus {
     }
 
     pub(crate) fn poison(&self, err: Error) {
-        let resolver = self.write().poison(err.clone());
-        // We carry the Connection here to drop the lock() above before dropping the Connection
-        if let Some((resolver, _connection)) = resolver {
-            resolver.reject(err);
-        }
+        self.write().poison(err);
     }
 
     pub(crate) fn auto_close(&self) -> bool {
@@ -160,7 +135,6 @@ impl fmt::Debug for ConnectionStatus {
 }
 
 struct Inner {
-    connection_step: Option<ConnectionStep>,
     state: ConnectionState,
     vhost: ShortString,
     username: String,
@@ -171,7 +145,6 @@ struct Inner {
 impl Default for Inner {
     fn default() -> Self {
         Self {
-            connection_step: None,
             state: ConnectionState::default(),
             vhost: "/".into(),
             username: "guest".into(),
@@ -182,31 +155,18 @@ impl Default for Inner {
 }
 
 impl Inner {
-    fn set_connecting(
-        &mut self,
-        resolver: PromiseResolver<Connection>,
-        conn: Connection,
-    ) -> Result<()> {
+    fn set_connecting(&mut self) -> Result<()> {
         self.state = ConnectionState::Connecting;
-        self.connection_step = Some(ConnectionStep::ProtocolHeader(resolver, conn));
         self.poison.take().map(Err).unwrap_or(Ok(()))
     }
 
     fn set_reconnecting(&mut self) {
-        let _ = self.connection_step.take();
         let _ = self.poison.take();
         self.state = ConnectionState::Reconnecting;
         self.blocked = false;
     }
 
-    fn connection_resolver(&mut self) -> Option<(PromiseResolver<Connection>, Option<Connection>)> {
-        self.connection_step
-            .take()
-            .map(ConnectionStep::into_connection_resolver)
-    }
-
-    fn poison(&mut self, err: Error) -> Option<(PromiseResolver<Connection>, Option<Connection>)> {
+    fn poison(&mut self, err: Error) {
         self.poison = Some(err);
-        self.connection_resolver()
     }
 }

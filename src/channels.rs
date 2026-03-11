@@ -169,7 +169,7 @@ impl Channels {
         }
 
         error!(%error, "Connection error");
-        if let Some(resolver) = self.connection_status.connection_resolver() {
+        if let Some(resolver) = self.frames.connection_resolver(0) {
             resolver.reject(error.clone());
         }
 
@@ -194,7 +194,7 @@ impl Channels {
                     version
                 );
                 let error: Error = ErrorKind::InvalidProtocolVersion(version).into();
-                if let Some(resolver) = self.connection_status.connection_resolver() {
+                if let Some(resolver) = self.frames.connection_resolver(0) {
                     resolver.reject(error.clone());
                 }
                 return Err(error);
@@ -242,6 +242,7 @@ impl Channels {
     pub(crate) fn init_connection_recovery(&self, error: Error) -> Error {
         trace!("init connection recovery");
         self.connection_status.set_reconnecting();
+        self.frames.clear_connection_steps(None);
         let error = self
             .read()
             .channels

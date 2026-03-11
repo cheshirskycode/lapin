@@ -147,6 +147,7 @@ use options::*;
 #[derive(Debug)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum Reply {
+    ConnectionStep(ConnectionStep),
     BasicQosOk(PromiseResolver<()>),
     BasicConsumeOk(
         PromiseResolver<Consumer>,
@@ -159,7 +160,11 @@ pub(crate) enum Reply {
     BasicCancelOk(PromiseResolver<()>),
     BasicGetOk(PromiseResolver<Option<BasicGetMessage>>),
     BasicRecoverOk(PromiseResolver<()>),
-    ConnectionOpenOk(PromiseResolver<()>, Box<Connection>),
+    ConnectionOpenOk(
+        PromiseResolver<()>,
+        Box<Connection>,
+        PromiseResolver<Connection>,
+    ),
     ConnectionCloseOk(PromiseResolver<()>),
     ConnectionUpdateSecretOk(PromiseResolver<()>),
     ChannelOpenOk(PromiseResolver<Channel>, Channel),
@@ -780,7 +785,11 @@ impl Channel {
         if !self.status.can_receive_messages() {
             return Err(self.status.state_error("connection.start"));
         }
-        self.on_connection_start_received(method)
+
+        match self.frames.find_connection_step(self.id) {
+            Some(step) => self.on_connection_start_received(method, step),
+            None => self.connection_process_error(self.connection_status.state(), None, None),
+        }
     }
     async fn connection_start_ok(
         &self,
@@ -802,8 +811,19 @@ impl Channel {
             },
         ));
 
-        self.before_connection_start_ok(conn_resolver, connection, auth_provider);
-        self.send_method_frame(method, Box::new(resolver.clone()), None, Some(resolver));
+        self.send_method_frame(
+            method,
+            Box::new(resolver.clone()),
+            Some(ExpectedReply(
+                Reply::ConnectionStep(ConnectionStep::StartOk(
+                    conn_resolver,
+                    connection,
+                    auth_provider,
+                )),
+                Box::new(resolver),
+            )),
+            None,
+        );
         promise.await
     }
     fn receive_connection_secure(&self, method: protocol::connection::Secure) -> Result<()> {
@@ -811,7 +831,11 @@ impl Channel {
         if !self.status.can_receive_messages() {
             return Err(self.status.state_error("connection.secure"));
         }
-        self.on_connection_secure_received(method)
+
+        match self.frames.find_connection_step(self.id) {
+            Some(step) => self.on_connection_secure_received(method, step),
+            None => self.connection_process_error(self.connection_status.state(), None, None),
+        }
     }
     async fn connection_secure_ok(
         &self,
@@ -825,8 +849,19 @@ impl Channel {
             protocol::connection::SecureOk { response },
         ));
 
-        self.before_connection_secure_ok(conn_resolver, connection, auth_provider);
-        self.send_method_frame(method, Box::new(resolver.clone()), None, Some(resolver));
+        self.send_method_frame(
+            method,
+            Box::new(resolver.clone()),
+            Some(ExpectedReply(
+                Reply::ConnectionStep(ConnectionStep::SecureOk(
+                    conn_resolver,
+                    connection,
+                    auth_provider,
+                )),
+                Box::new(resolver),
+            )),
+            None,
+        );
         promise.await
     }
     fn receive_connection_tune(&self, method: protocol::connection::Tune) -> Result<()> {
@@ -834,7 +869,11 @@ impl Channel {
         if !self.status.can_receive_messages() {
             return Err(self.status.state_error("connection.tune"));
         }
-        self.on_connection_tune_received(method)
+
+        match self.frames.find_connection_step(self.id) {
+            Some(step) => self.on_connection_tune_received(method, step),
+            None => self.connection_process_error(self.connection_status.state(), None, None),
+        }
     }
     async fn connection_tune_ok(
         &self,
@@ -861,12 +900,11 @@ impl Channel {
         conn_resolver: PromiseResolver<Connection>,
     ) -> Result<()> {
         let (promise, resolver) = Promise::new("connection.open");
-        let reply = Reply::ConnectionOpenOk(resolver.clone(), connection);
+        let reply = Reply::ConnectionOpenOk(resolver.clone(), connection, conn_resolver);
         let method = AMQPClass::Connection(protocol::connection::AMQPMethod::Open(
             protocol::connection::Open { virtual_host },
         ));
 
-        self.before_connection_open(conn_resolver);
         self.send_method_frame(
             method,
             Box::new(resolver.clone()),
@@ -884,8 +922,8 @@ impl Channel {
         match self.frames.find_expected_reply(self.id, |reply| {
             matches!(&reply.0, Reply::ConnectionOpenOk(..))
         }) {
-            Some(Reply::ConnectionOpenOk(resolver, connection)) => {
-                let res = self.on_connection_open_ok_received(method, connection);
+            Some(Reply::ConnectionOpenOk(resolver, connection, conn_resolver)) => {
+                let res = self.on_connection_open_ok_received(method, connection, conn_resolver);
                 resolver.complete(res.clone());
                 res
             }

@@ -1,5 +1,5 @@
 use crate::{Connection, PromiseResolver, auth::AuthProvider};
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 pub(crate) enum ConnectionStep {
     ProtocolHeader(PromiseResolver<Connection>, Connection),
@@ -13,7 +13,6 @@ pub(crate) enum ConnectionStep {
         Connection,
         Arc<dyn AuthProvider>,
     ),
-    Open(PromiseResolver<Connection>),
 }
 
 impl ConnectionStep {
@@ -22,7 +21,6 @@ impl ConnectionStep {
             ConnectionStep::ProtocolHeader(..) => "ProtocolHeader",
             ConnectionStep::StartOk(..) => "StartOk",
             ConnectionStep::SecureOk(..) => "SecureOk",
-            ConnectionStep::Open(..) => "Open",
         }
     }
 
@@ -35,7 +33,12 @@ impl ConnectionStep {
             }
             ConnectionStep::StartOk(resolver, connection, ..) => (resolver, Some(connection)),
             ConnectionStep::SecureOk(resolver, connection, ..) => (resolver, Some(connection)),
-            ConnectionStep::Open(resolver, ..) => (resolver, None),
         }
+    }
+}
+
+impl fmt::Debug for ConnectionStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ConnectionStep::{}", self.name())
     }
 }
