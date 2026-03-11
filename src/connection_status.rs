@@ -1,6 +1,6 @@
 use crate::{
-    Connection, Error, ErrorKind, PromiseResolver, Result, auth::AuthProvider, types::ShortString,
-    uri::AMQPUri,
+    Connection, Error, ErrorKind, PromiseResolver, Result, connection_step::ConnectionStep,
+    types::ShortString, uri::AMQPUri,
 };
 use std::{
     fmt,
@@ -130,45 +130,6 @@ impl ConnectionStatus {
 
     fn write(&self) -> RwLockWriteGuard<'_, Inner> {
         self.0.write().unwrap_or_else(|e| e.into_inner())
-    }
-}
-
-pub(crate) enum ConnectionStep {
-    ProtocolHeader(PromiseResolver<Connection>, Connection),
-    StartOk(
-        PromiseResolver<Connection>,
-        Connection,
-        Arc<dyn AuthProvider>,
-    ),
-    SecureOk(
-        PromiseResolver<Connection>,
-        Connection,
-        Arc<dyn AuthProvider>,
-    ),
-    Open(PromiseResolver<Connection>),
-}
-
-impl ConnectionStep {
-    pub(crate) fn name(&self) -> &'static str {
-        match self {
-            ConnectionStep::ProtocolHeader(..) => "ProtocolHeader",
-            ConnectionStep::StartOk(..) => "StartOk",
-            ConnectionStep::SecureOk(..) => "SecureOk",
-            ConnectionStep::Open(..) => "Open",
-        }
-    }
-
-    pub(crate) fn into_connection_resolver(
-        self,
-    ) -> (PromiseResolver<Connection>, Option<Connection>) {
-        match self {
-            ConnectionStep::ProtocolHeader(resolver, connection, ..) => {
-                (resolver, Some(connection))
-            }
-            ConnectionStep::StartOk(resolver, connection, ..) => (resolver, Some(connection)),
-            ConnectionStep::SecureOk(resolver, connection, ..) => (resolver, Some(connection)),
-            ConnectionStep::Open(resolver, ..) => (resolver, None),
-        }
     }
 }
 

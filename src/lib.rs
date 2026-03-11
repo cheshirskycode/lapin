@@ -144,6 +144,7 @@ mod connection_builder;
 mod connection_closer;
 mod connection_properties;
 mod connection_status;
+mod connection_step;
 mod consumer;
 mod consumer_canceler;
 mod consumer_status;

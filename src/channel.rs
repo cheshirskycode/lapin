@@ -8,7 +8,7 @@ use crate::{
     channel_receiver_state::DeliveryCause,
     configuration::{NegotiatedConfig, RecoveryConfig},
     connection_closer::ConnectionCloser,
-    connection_status::ConnectionStep,
+    connection_step::ConnectionStep,
     consumer::Consumer,
     consumers::Consumers,
     events::EventsSender,
