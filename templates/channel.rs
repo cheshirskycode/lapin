@@ -66,16 +66,12 @@ impl Channel {
     {{#unless class.metadata.channel0_only ~}}
     {{#if method.metadata.channel_init ~}}
     if !self.status.initializing() {
-    {{else}}
-    {{#if method.metadata.channel_deinit ~}}
+    {{else if method.metadata.channel_deinit ~}}
     if !self.status.closing() {
-    {{else}}
-    {{#if method.metadata.channel_recovery ~}}
+    {{else if method.metadata.channel_recovery ~}}
     if !self.status.connected_or_recovering() {
     {{else}}
     if !self.status.connected() {
-    {{/if ~}}
-    {{/if ~}}
     {{/if ~}}
       return Err(self.status.state_error("{{class.name}}.{{method.name}}"));
     }
@@ -134,7 +130,7 @@ impl Channel {
     self.send_method_frame_with_body("{{class.name}}.{{method.name}}", method, payload, properties, start_hook_res).await
     {{else}}
     {{#if method.metadata.resolver_hook ~}}{{method.metadata.resolver_hook}}{{/if ~}}
-    self.send_method_frame(method, Box::new(resolver.clone()), {{#if method.synchronous ~}}Some(ExpectedReply(reply, Box::new(resolver))), None{{else if method.metadata.connection_step}}Some(ExpectedReply(Reply::ConnectionStep(ConnectionStep::{{method.metadata.connection_step}}), Box::new(resolver))), None{{else}}None, Some(resolver){{/if ~}});
+    self.send_method_frame(method, Box::new(resolver.clone()), {{#if method.synchronous ~}}Some(ExpectedReply(reply, Box::new(resolver))), None{{else if method.metadata.connection_step ~}}Some(ExpectedReply(Reply::ConnectionStep(ConnectionStep::{{method.metadata.connection_step}}), Box::new(resolver))), None{{else}}None, Some(resolver){{/if ~}});
     {{#if method.metadata.end_hook ~}}
     self.on_{{snake class.name false}}_{{snake method.name false}}_sent({{#if method.metadata.end_hook.params ~}}{{#each method.metadata.end_hook.params as |param| ~}}{{#unless @first ~}}, {{/unless ~}}{{param}}{{/each ~}}{{/if ~}});
     {{/if ~}}
@@ -152,8 +148,8 @@ impl Channel {
   {{/if ~}}
 
   {{#if method.s2c ~}}
-  {{#if method.is_reply ~}}
   fn receive_{{snake class.name false}}_{{snake method.name false}}(&self, method: protocol::{{snake class.name}}::{{camel method.name}}) -> Result<()> {
+  {{#if method.is_reply ~}}
     {{#if class.metadata.channel0_only ~}}
     self.assert_channel0(
       method.get_amqp_class_id(),
@@ -173,12 +169,10 @@ impl Channel {
         {{#unless method.metadata.confirmation.type ~}}let res ={{/unless ~}}
         {{#if method.arguments ~}}
         self.on_{{snake class.name false}}_{{snake method.name false}}_received(method{{#if method.metadata.confirmation.type ~}}, resolver{{/if ~}}{{#if method.metadata.state ~}}{{#each method.metadata.state as |state| ~}}, {{state.name}}{{/each ~}}{{/if ~}})
-        {{else}}
-        {{#if method.metadata.received_hook ~}}
+        {{else if method.metadata.received_hook ~}}
         self.on_{{snake class.name false}}_{{snake method.name false}}_received({{#if method.metadata.received_hook.params ~}}{{#each method.metadata.received_hook.params as |param| ~}}{{#unless @first ~}}, {{/unless ~}}{{param}}{{/each ~}}{{/if ~}})
         {{else}}
         Ok(())
-        {{/if ~}}
         {{/if ~}}
         {{#unless method.metadata.confirmation.type ~}};
         resolver.complete(res.clone());
@@ -189,9 +183,7 @@ impl Channel {
         self.handle_invalid_contents(format!("unexpected {{class.name}} {{method.name}} received on channel {}, was awaiting for {:?}", self.id, unexpected), method.get_amqp_class_id(), method.get_amqp_method_id())
       },
     }
-  }
-  {{else if method.metadata.connection_step}}
-  fn receive_{{snake class.name false}}_{{snake method.name false}}(&self, method: protocol::{{snake class.name}}::{{camel method.name}}) -> Result<()> {
+  {{else if method.metadata.connection_step ~}}
     self.assert_channel0(
       method.get_amqp_class_id(),
       method.get_amqp_method_id(),
@@ -204,9 +196,7 @@ impl Channel {
       Some(step) => self.on_{{snake class.name false}}_{{snake method.name false}}_received(method, step),
       None => self.connection_process_error(self.connection_status.state(), None, None),
     }
-  }
   {{else}}
-  fn receive_{{snake class.name false}}_{{snake method.name false}}(&self, method: protocol::{{snake class.name}}::{{camel method.name}}) -> Result<()> {
     {{#if class.metadata.channel0_only ~}}
     self.assert_channel0(
       method.get_amqp_class_id(),
@@ -217,8 +207,8 @@ impl Channel {
       return Err(self.status.state_error("{{class.name}}.{{method.name}}"));
     }
     self.on_{{snake class.name false}}_{{snake method.name false}}_received(method)
-  }
   {{/if ~}}
+  }
   {{/if ~}}
   {{/unless ~}}
   {{/each ~}}
