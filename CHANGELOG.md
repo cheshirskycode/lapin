@@ -1,3 +1,13 @@
+### 4.4.0 (2026-03-29)
+
+#### Misc
+
+* Reworked internal state handling during early connection steps
+
+#### Bug Fixes
+
+* Updated `async-rs` to 0.8.2 to make sure the lapin Internal RPC loop is bound to the right tokio context
+
 ### 4.3.0 (2026-03-10)
 
 #### Misc
